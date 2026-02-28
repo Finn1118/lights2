@@ -1,0 +1,14 @@
+# HomeControl API server
+fastapi>=0.115
+uvicorn[standard]>=0.34
+pydantic>=2.0
+
+# Device controllers
+samsungtvws[async]  # Samsung TV WebSocket (optional — only if TV is on network)
+wakeonlan            # Wake-on-LAN magic packet for powering on the TV from standby
+
+# Desktop Agent (PC-only dependencies)
+pynput
+mss
+requests
+Pillow

@@ -1,0 +1,154 @@
+#!/bin/sh
+# ================================================================
+#  /www/cgi-bin/govee  —  Govee LAN API gateway for OpenWrt
+# ================================================================
+#  Receives HTTP POST from the web UI, constructs the Govee JSON
+#  payload, fires it as a single UDP datagram via busybox nc.
+#
+#  Endpoints (via ?cmd= query parameter):
+#    GET  ?cmd=status        → return cached device state
+#    POST ?cmd=power         body: {"on":true}  or {"on":false}
+#    POST ?cmd=color         body: {"r":255,"g":0,"b":128}
+#    POST ?cmd=brightness    body: {"brightness":50}
+#
+#  State is cached in /tmp so the UI can poll it back.
+#  Govee devices are fire-and-forget (no ACK), so state is
+#  optimistic — it reflects what we last *sent*, not confirmed.
+# ================================================================
+
+DEVICE_IP="192.168.8.233"
+DEVICE_PORT=4003
+STATE="/tmp/govee_state.json"
+
+# ── HTTP response helpers ────────────────────────────────────────
+
+headers() {
+  echo "Status: $1"
+  echo "Content-Type: application/json"
+  echo "Access-Control-Allow-Origin: *"
+  echo "Access-Control-Allow-Methods: GET, POST, OPTIONS"
+  echo "Access-Control-Allow-Headers: Content-Type"
+  echo "Cache-Control: no-cache"
+  echo ""
+}
+
+respond() {
+  headers "200 OK"
+  printf '%s\n' "$1"
+  exit 0
+}
+
+error() {
+  headers "$1"
+  printf '{"error":"%s"}\n' "$2"
+  exit 0
+}
+
+# ── CORS preflight ───────────────────────────────────────────────
+
+if [ "$REQUEST_METHOD" = "OPTIONS" ]; then
+  headers "204 No Content"
+  exit 0
+fi
+
+# ── Initialise state file on first run ───────────────────────────
+
+if [ ! -f "$STATE" ]; then
+  printf '{"power":false,"brightness":100,"color":[255,255,255]}\n' > "$STATE"
+fi
+
+# ── Send UDP datagram (fire-and-forget) ──────────────────────────
+# Background nc so the HTTP response returns instantly.
+# The UDP write happens before nc's 1-second idle timeout.
+
+send_udp() {
+  printf '%s' "$1" | nc -u -w1 "$DEVICE_IP" "$DEVICE_PORT" >/dev/null 2>&1 &
+}
+
+# ── Read POST body from stdin ────────────────────────────────────
+
+BODY=""
+if [ "$REQUEST_METHOD" = "POST" ] && [ -n "$CONTENT_LENGTH" ] \
+   && [ "$CONTENT_LENGTH" -gt 0 ] 2>/dev/null; then
+  BODY=$(head -c "$CONTENT_LENGTH")
+fi
+
+# ── Parse ?cmd= from query string ───────────────────────────────
+
+CMD=""
+case "$QUERY_STRING" in
+  *cmd=status*)     CMD="status" ;;
+  *cmd=power*)      CMD="power" ;;
+  *cmd=color*)      CMD="color" ;;
+  *cmd=brightness*) CMD="brightness" ;;
+  *cmd=ping*)       CMD="ping" ;;
+esac
+
+# ── Route: GET requests ──────────────────────────────────────────
+
+if [ "$REQUEST_METHOD" = "GET" ]; then
+  case "$CMD" in
+    status)
+      # Build full status response from cached state
+      ST=$(cat "$STATE" 2>/dev/null || echo '{}')
+      # Extract fields from state file
+      PWR=$(echo "$ST" | sed -n 's/.*"power" *: *\(true\|false\).*/\1/p')
+      BRT=$(echo "$ST" | sed -n 's/.*"brightness" *: *\([0-9]*\).*/\1/p')
+      CLR=$(echo "$ST" | sed -n 's/.*"color" *: *\(\[[^]]*\]\).*/\1/p')
+      [ -z "$PWR" ] && PWR="false"
+      [ -z "$BRT" ] && BRT="100"
+      [ -z "$CLR" ] && CLR="[255,255,255]"
+      respond "{\"online\":true,\"device_type\":\"govee_light\",\"name\":\"Govee Light\",\"ip\":\"$DEVICE_IP\",\"power\":$PWR,\"brightness\":$BRT,\"color\":$CLR}"
+      ;;
+    ping)
+      respond '{"ok":true}'
+      ;;
+    *)
+      respond '{"service":"govee-cgi","commands":["status","power","color","brightness"]}'
+      ;;
+  esac
+  exit 0
+fi
+
+# ── Route: POST requests ─────────────────────────────────────────
+
+if [ "$REQUEST_METHOD" != "POST" ]; then
+  error "405 Method Not Allowed" "Use GET or POST"
+fi
+
+case "$CMD" in
+
+  power)
+    # Body: {"on":true} or {"on":false}
+    ON=$(echo "$BODY" | sed -n 's/.*"on" *: *\(true\|false\).*/\1/p')
+    [ -z "$ON" ] && error "400 Bad Request" "Missing field: on"
+    if [ "$ON" = "true" ]; then VAL=1; else VAL=0; fi
+    send_udp "{\"msg\":{\"cmd\":\"turn\",\"data\":{\"value\":$VAL}}}"
+    sed -i "s/\"power\":[a-z]*/\"power\":$ON/" "$STATE"
+    respond "{\"message\":\"Power $([ $VAL -eq 1 ] && echo on || echo off)\"}"
+    ;;
+
+  color)
+    # Body: {"r":255,"g":0,"b":128}
+    R=$(echo "$BODY" | sed -n 's/.*"r" *: *\([0-9]*\).*/\1/p')
+    G=$(echo "$BODY" | sed -n 's/.*"g" *: *\([0-9]*\).*/\1/p')
+    B=$(echo "$BODY" | sed -n 's/.*"b" *: *\([0-9]*\).*/\1/p')
+    [ -z "$R" ] || [ -z "$G" ] || [ -z "$B" ] && error "400 Bad Request" "Missing r/g/b"
+    send_udp "{\"msg\":{\"cmd\":\"colorwc\",\"data\":{\"color\":{\"r\":$R,\"g\":$G,\"b\":$B},\"colorTemInKelvin\":0}}}"
+    sed -i "s/\"color\":\[[^]]*\]/\"color\":[$R,$G,$B]/" "$STATE"
+    respond "{\"message\":\"Color set to ($R, $G, $B)\"}"
+    ;;
+
+  brightness)
+    # Body: {"brightness":50}
+    BRT=$(echo "$BODY" | sed -n 's/.*"brightness" *: *\([0-9]*\).*/\1/p')
+    [ -z "$BRT" ] && error "400 Bad Request" "Missing field: brightness"
+    send_udp "{\"msg\":{\"cmd\":\"brightness\",\"data\":{\"value\":$BRT}}}"
+    sed -i "s/\"brightness\":[0-9]*/\"brightness\":$BRT/" "$STATE"
+    respond "{\"message\":\"Brightness set to ${BRT}%\"}"
+    ;;
+
+  *)
+    error "400 Bad Request" "Unknown cmd. Use: power, color, brightness"
+    ;;
+esac

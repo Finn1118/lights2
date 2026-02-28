@@ -1,0 +1,4 @@
+tv_token.txt
+__pycache__/
+*.pyc
+.env

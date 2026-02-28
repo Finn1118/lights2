@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>HomeControl</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0e0e10;
+    --surface:   #18181b;
+    --border:    #27272a;
+    --text:      #e4e4e7;
+    --text-dim:  #71717a;
+    --accent:    #6d28d9;
+    --accent-hi: #7c3aed;
+    --green:     #22c55e;
+    --red:       #ef4444;
+    --radius:    12px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    padding: 16px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    text-align: center;
+    padding: 12px 0 6px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+  }
+
+  /* ── Network status bar ────────────────────── */
+
+  .net-bar {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 8px 0 18px;
+  }
+
+  .net-node {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+  }
+
+  .net-node .pip {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--red);
+    transition: background 0.3s;
+  }
+  .net-node .pip.up { background: var(--green); }
+
+  /* ── Cards ─────────────────────────────────── */
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+    position: relative;
+    transition: opacity 0.3s;
+  }
+
+  .card-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-title .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .card-title .dot.online { background: var(--green); }
+
+  /* ── Offline overlay ───────────────────────── */
+
+  .card.offline { opacity: 0.35; pointer-events: none; }
+
+  .card .offline-banner {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(14, 14, 16, 0.70);
+    border-radius: var(--radius);
+    z-index: 10;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .card.offline .offline-banner {
+    display: flex;
+    pointer-events: auto;
+  }
+
+  .offline-banner span {
+    background: #27272a;
+    border: 1px solid var(--border);
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    letter-spacing: 0.03em;
+  }
+
+  /* ── Power toggle ──────────────────────────── */
+
+  .power-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .power-label { font-size: 0.9rem; color: var(--text-dim); }
+
+  .toggle {
+    position: relative;
+    width: 52px; height: 28px;
+    background: #3f3f46;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: none;
+    padding: 0;
+  }
+  .toggle.on { background: var(--green); }
+  .toggle::after {
+    content: "";
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 22px; height: 22px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle.on::after { transform: translateX(24px); }
+
+  /* ── Color picker area ─────────────────────── */
+
+  .color-section { margin-bottom: 18px; }
+
+  .color-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .color-input-wrap {
+    position: relative;
+    width: 56px; height: 56px;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 2px solid var(--border);
+    flex-shrink: 0;
+  }
+  .color-input-wrap input[type="color"] {
+    position: absolute;
+    top: -8px; left: -8px;
+    width: calc(100% + 16px);
+    height: calc(100% + 16px);
+    border: none;
+    cursor: pointer;
+    background: none;
+  }
+  .color-input-wrap input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+  .color-input-wrap input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0; }
+
+  .color-readout {
+    font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
+  /* ── Swatches ──────────────────────────────── */
+
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .swatch {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s;
+  }
+  .swatch:active { transform: scale(0.9); }
+  .swatch.active { border-color: #fff; }
+
+  /* ── Brightness slider ─────────────────────── */
+
+  .slider-section { margin-bottom: 4px; }
+
+  .slider-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    border-radius: 4px;
+    background: #3f3f46;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--accent-hi);
+    cursor: pointer;
+    border: 2px solid var(--surface);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--accent-hi);
+    cursor: pointer;
+    border: 2px solid var(--surface);
+  }
+
+  /* ── TV button grid ────────────────────────── */
+
+  .btn-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    background: #27272a;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.08s;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .btn:active { background: #3f3f46; transform: scale(0.96); }
+  .btn.accent { background: var(--accent); border-color: var(--accent); }
+  .btn.accent:active { background: var(--accent-hi); }
+  .btn.red { background: #7f1d1d; border-color: #991b1b; }
+  .btn.red:active { background: #991b1b; }
+  .btn.green { background: #14532d; border-color: #166534; }
+  .btn.green:active { background: #166534; }
+
+  .section-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    margin-top: 4px;
+  }
+
+  /* ── Toast notifications ───────────────────── */
+
+  #toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: #27272a;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  #toast.error { border-color: var(--red); }
+
+  @media (min-width: 600px) {
+    body { max-width: 480px; margin: 0 auto; }
+  }
+</style>
+</head>
+<body>
+
+<h1>HomeControl</h1>
+
+<!-- ── Network status ─────────────────────────────────────── -->
+<div class="net-bar">
+  <div class="net-node">
+    <span class="pip up" id="pip-router"></span> Router
+  </div>
+  <div class="net-node">
+    <span class="pip" id="pip-pc"></span> PC
+    <span id="pc-label" style="margin-left:2px; color:var(--red);">offline</span>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!--  GOVEE LIGHT  (always via router CGI)                   -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="card" id="govee-card">
+  <div class="card-title">
+    <span class="dot online" id="govee-dot"></span>
+    Govee Light
+  </div>
+
+  <div class="power-row">
+    <span class="power-label">Power</span>
+    <button class="toggle" id="govee-power" aria-label="Toggle Govee power"></button>
+  </div>
+
+  <div class="color-section">
+    <div class="color-picker-row">
+      <div class="color-input-wrap">
+        <input type="color" id="govee-colorpicker" value="#6d28d9">
+      </div>
+      <span class="color-readout" id="govee-rgb">109, 40, 217</span>
+    </div>
+    <div class="swatches" id="govee-swatches"></div>
+  </div>
+
+  <div class="slider-section">
+    <div class="slider-label">
+      <span>Brightness</span>
+      <span id="govee-brt-val">100%</span>
+    </div>
+    <input type="range" id="govee-brightness" min="1" max="100" value="100">
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════ -->
+<!--  SAMSUNG TV  (via PC FastAPI — greyed out when offline) -->
+<!-- ════════════════════════════════════════════════════════ -->
+<div class="card offline" id="tv-card">
+  <div class="offline-banner"><span>PC Offline</span></div>
+
+  <div class="card-title">
+    <span class="dot" id="tv-dot"></span>
+    Samsung TV
+  </div>
+
+  <div class="btn-grid" style="margin-bottom:14px;">
+    <button class="btn red" id="tv-power" style="grid-column:1/-1;">&#9211;&ensp;Power</button>
+  </div>
+
+  <div class="section-label">Volume</div>
+  <div class="btn-grid">
+    <button class="btn" data-vol="KEY_VOLDOWN">Vol − (Hold)</button>
+    <button class="btn red" data-key="KEY_MUTE">Mute</button>
+    <button class="btn" data-vol="KEY_VOLUP">Vol + (Hold)</button>
+  </div>
+
+  <div class="section-label">Navigation</div>
+  <div class="btn-grid">
+    <div></div>
+    <button class="btn" data-key="KEY_UP">Up</button>
+    <div></div>
+    <button class="btn" data-key="KEY_LEFT">Left</button>
+    <button class="btn accent" data-key="KEY_ENTER">OK</button>
+    <button class="btn" data-key="KEY_RIGHT">Right</button>
+    <div></div>
+    <button class="btn" data-key="KEY_DOWN">Down</button>
+    <div></div>
+  </div>
+
+  <div class="section-label">Controls</div>
+  <div class="btn-grid">
+    <button class="btn" data-key="KEY_HOME">Home</button>
+    <button class="btn" data-key="KEY_RETURN">Back</button>
+    <button class="btn" data-key="KEY_MENU">Menu</button>
+  </div>
+
+  <div class="section-label">Input Source</div>
+  <div class="btn-grid">
+    <button class="btn" data-source="HDMI1">HDMI 1</button>
+    <button class="btn" data-source="HDMI2">HDMI 2</button>
+    <button class="btn" data-source="TV">TV</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CONFIG — edit these to match your network
+// ═══════════════════════════════════════════════════════════
+const PC_API  = "http://192.168.8.118:8000";        // Windows PC FastAPI backend
+const POLL_MS = 5000;                               // status poll interval
+
+// ═══════════════════════════════════════════════════════════
+
+const SWATCHES = [
+  { name: "Red",        hex: "#ff0000" },
+  { name: "Orange",     hex: "#ff6600" },
+  { name: "Yellow",     hex: "#ffcc00" },
+  { name: "Green",      hex: "#00cc44" },
+  { name: "Cyan",       hex: "#00cccc" },
+  { name: "Blue",       hex: "#0044ff" },
+  { name: "Purple",     hex: "#8800ff" },
+  { name: "Pink",       hex: "#ff0088" },
+  { name: "Warm White", hex: "#ffaa55" },
+  { name: "Cool White", hex: "#ccddff" },
+];
+
+let pcOnline = false;
+
+// ── Helpers ──────────────────────────────────────────────
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+function rgbToHex(r, g, b) {
+  return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
+let _toastTimer;
+function toast(msg, isError) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.toggle("error", !!isError);
+  el.classList.add("show");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove("show"), 2000);
+}
+
+// ── API fetch wrappers ───────────────────────────────────
+// Both route to the same PC_API FastAPI backend.
+// goveeApi → /govee/*   tvApi → /tv/*
+
+async function goveeApi(method, path, body) {
+  try {
+    const res = await fetch(PC_API + "/govee/" + path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return await res.json();
+  } catch (err) {
+    toast("PC unreachable", true);
+    return null;
+  }
+}
+
+async function tvApi(method, path, body) {
+  if (!pcOnline) return null;
+  try {
+    const res = await fetch(PC_API + path, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.detail || "TV request failed", true); return null; }
+    return data;
+  } catch (err) {
+    // PC just went offline mid-request
+    setPcOnline(false);
+    return null;
+  }
+}
+
+// ── PC heartbeat ─────────────────────────────────────────
+
+const pipPc   = document.getElementById("pip-pc");
+const pcLabel = document.getElementById("pc-label");
+const tvCard  = document.getElementById("tv-card");
+const tvDot   = document.getElementById("tv-dot");
+
+function setPcOnline(online) {
+  pcOnline = online;
+  pipPc.classList.toggle("up", online);
+  pcLabel.textContent = online ? "online" : "offline";
+  pcLabel.style.color = online ? "var(--green)" : "var(--red)";
+  tvCard.classList.toggle("offline", !online);
+}
+
+async function heartbeat() {
+  try {
+    const res = await fetch(PC_API + "/tv/status", {
+      method: "GET",
+      signal: AbortSignal.timeout(2000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setPcOnline(true);
+      tvDot.classList.toggle("online", data.online);
+    } else {
+      setPcOnline(false);
+    }
+  } catch {
+    setPcOnline(false);
+  }
+}
+
+// ── Govee: Power toggle ─────────────────────────────────
+
+const goveePower = document.getElementById("govee-power");
+let goveePowerState = false;
+
+goveePower.addEventListener("click", async () => {
+  goveePowerState = !goveePowerState;
+  goveePower.classList.toggle("on", goveePowerState);
+  const data = await goveeApi("POST", "power", { on: goveePowerState });
+  if (data && data.message) toast(data.message);
+});
+
+// ── Govee: Color picker ─────────────────────────────────
+
+const colorPicker = document.getElementById("govee-colorpicker");
+const rgbReadout  = document.getElementById("govee-rgb");
+const swatchWrap  = document.getElementById("govee-swatches");
+let activeSwatch  = null;
+let colorDebounce = null;
+
+function updateColorReadout(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  rgbReadout.textContent = `${r}, ${g}, ${b}`;
+}
+
+function sendColor(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  clearTimeout(colorDebounce);
+  colorDebounce = setTimeout(() => {
+    goveeApi("POST", "color", { r, g, b });
+  }, 100);  // 10 req/s max — gentler on CGI overhead
+}
+
+colorPicker.addEventListener("input", (e) => {
+  updateColorReadout(e.target.value);
+  sendColor(e.target.value);
+  if (activeSwatch) { activeSwatch.classList.remove("active"); activeSwatch = null; }
+});
+
+SWATCHES.forEach(({ name, hex }) => {
+  const el = document.createElement("button");
+  el.className = "swatch";
+  el.style.background = hex;
+  el.title = name;
+  el.setAttribute("aria-label", name);
+  el.addEventListener("click", () => {
+    colorPicker.value = hex;
+    updateColorReadout(hex);
+    sendColor(hex);
+    if (activeSwatch) activeSwatch.classList.remove("active");
+    el.classList.add("active");
+    activeSwatch = el;
+  });
+  swatchWrap.appendChild(el);
+});
+
+// ── Govee: Brightness slider ────────────────────────────
+
+const brtSlider = document.getElementById("govee-brightness");
+const brtVal    = document.getElementById("govee-brt-val");
+let brtDebounce = null;
+
+brtSlider.addEventListener("input", (e) => {
+  const v = parseInt(e.target.value);
+  brtVal.textContent = v + "%";
+  clearTimeout(brtDebounce);
+  brtDebounce = setTimeout(() => {
+    goveeApi("POST", "brightness", { brightness: v });
+  }, 100);
+});
+
+// ── Govee: Status poll ──────────────────────────────────
+
+async function pollGovee() {
+  const gs = await goveeApi("GET", "status");
+  if (!gs) return;
+  document.getElementById("govee-dot").classList.toggle("online", gs.online);
+  if (gs.power !== undefined) {
+    goveePowerState = gs.power;
+    goveePower.classList.toggle("on", gs.power);
+  }
+  if (gs.brightness != null) {
+    brtSlider.value = gs.brightness;
+    brtVal.textContent = gs.brightness + "%";
+  }
+  if (gs.color) {
+    const [r, g, b] = gs.color;
+    colorPicker.value = rgbToHex(r, g, b);
+    rgbReadout.textContent = `${r}, ${g}, ${b}`;
+  }
+}
+
+// ── TV: Power ───────────────────────────────────────────────
+// Route through /tv/power so Wake-on-LAN fires on power-on.
+
+const tvPower = document.getElementById("tv-power");
+
+tvPower.addEventListener("click", async () => {
+  const isOnline = document.getElementById("tv-dot").classList.contains("online");
+  const data = await tvApi("POST", "/tv/power", { on: !isOnline });
+  if (data && data.message) toast(data.message);
+});
+
+// ── TV: Volume buttons (press-and-hold) ──────────────────
+
+function startVolumeRepeat(key) {
+  tvApi("POST", "/tv/repeat/start", { key });
+}
+
+function stopVolumeRepeat() {
+  tvApi("POST", "/tv/repeat/stop");
+}
+
+document.querySelectorAll("[data-vol]").forEach(btn => {
+  const key = btn.dataset.vol;
+  btn.addEventListener("mousedown",  ()  => startVolumeRepeat(key));
+  btn.addEventListener("touchstart", (e) => { e.preventDefault(); startVolumeRepeat(key); }, { passive: false });
+  btn.addEventListener("mouseup",    stopVolumeRepeat);
+  btn.addEventListener("mouseleave", stopVolumeRepeat);
+  btn.addEventListener("touchend",   stopVolumeRepeat);
+});
+
+// ── TV: Remote keys ─────────────────────────────────────
+
+document.querySelectorAll("[data-key]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const data = await tvApi("POST", "/tv/key", { key: btn.dataset.key });
+    if (data && data.message) toast(data.message);
+  });
+});
+
+// ── TV: Source select ───────────────────────────────────
+
+document.querySelectorAll("[data-source]").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    const data = await tvApi("POST", "/tv/source", { source: btn.dataset.source });
+    if (data && data.message) toast(data.message);
+  });
+});
+
+// ── Boot ─────────────────────────────────────────────────
+
+pollGovee();
+heartbeat();
+setInterval(pollGovee, POLL_MS);
+setInterval(heartbeat, POLL_MS);
+</script>
+</body>
+</html>
