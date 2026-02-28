@@ -12,3 +12,5 @@ pynput
 mss
 requests
 Pillow
+PyAudioWPatch           # WASAPI loopback audio capture (audio visualizer mode)
+numpy                   # DSP — FFT and RMS for audio-to-colour mapping
