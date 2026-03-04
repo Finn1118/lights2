@@ -308,6 +308,20 @@
 </div>
 
 <!-- ════════════════════════════════════════════ -->
+<!--  AQUARIUM TANK LIGHT (KAUF Plug)            -->
+<!-- ════════════════════════════════════════════ -->
+<div class="card" id="kauf-card">
+  <div class="card-title">
+    <span class="dot" id="kauf-dot"></span>
+    Aquarium Tank Light
+  </div>
+  <div class="power-row">
+    <span class="power-label">Power</span>
+    <button class="toggle" id="kauf-power" aria-label="Toggle Aquarium Tank Light"></button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
 <!--  SAMSUNG TV                                 -->
 <!-- ════════════════════════════════════════════ -->
 <div class="card" id="tv-card">
@@ -495,6 +509,18 @@ brtSlider.addEventListener("input", (e) => {
   }, 100);
 });
 
+// ── KAUF Plug: Power toggle ─────────────────────────────────
+
+const kaufPower = document.getElementById("kauf-power");
+let kaufPowerState = false;
+
+kaufPower.addEventListener("click", async () => {
+  kaufPowerState = !kaufPowerState;
+  kaufPower.classList.toggle("on", kaufPowerState);
+  const data = await api("POST", "/kauf/power", { on: kaufPowerState });
+  if (data) toast(data.message);
+});
+
 // ── TV: Power toggle ────────────────────────────────────────
 
 const tvPower = document.getElementById("tv-power");
@@ -563,6 +589,16 @@ async function pollStatus() {
       const [r, g, b] = gs.color;
       colorPicker.value = rgbToHex(r, g, b);
       rgbReadout.textContent = `${r}, ${g}, ${b}`;
+    }
+  }
+
+  // KAUF Plug
+  const ks = await api("GET", "/kauf/status");
+  if (ks) {
+    document.getElementById("kauf-dot").classList.toggle("online", ks.online);
+    if (ks.power !== undefined) {
+      kaufPowerState = ks.power;
+      kaufPower.classList.toggle("on", ks.power);
     }
   }
 
